@@ -1,39 +1,48 @@
 library(shiny)
 library(tidyverse)
-library(MASS)
+library(DBI)
 
+
+con <- dbConnect(RSQLite::SQLite(), dbname = "data.db")
+db_table <- tbl(con, "data")
+on.exit(dbDisconnect(con))
 
 # set up functions ------
-get_data <- function() {
-    tibble(
-        a = 1,
-        b = 5, 
-        c = 10
-    ) %>% 
-        pivot_longer(everything()) %>% 
-        mutate(sim = map(value, ~rnorm(n = 100, mean = .))) %>% 
-        unnest_longer(sim)
-}
-
-
-filter_data <- function(df, my_value) {
+filter_data <- function(df, gap1_usr = 0, gap2_usr = 0, stdpercent_usr = 0,
+                        T_usr = 0) {
     df %>% 
-        filter(value == my_value)
+        filter(gap1 == gap1_usr,
+               gap2 == gap2_usr,
+               stdpercent == stdpercent_usr,
+               T == T_usr)
 }
 
 
 make_plot <- function(filtered_data) {
-    ggplot(filtered_data, aes(value, sim)) +
-        geom_jitter() +
-        scale_x_continuous(limits = c(0, 12)) +
-        scale_y_continuous(limits = c(-2, 13)) +
-        theme_bw()
+    filtered_data %>%
+        collect() %>% 
+        select(contains("bias"), q, samegap1, samegap2) %>%
+        pivot_longer(contains("bias"), names_to = "x_name", values_to = "x_val") %>% 
+        pivot_longer(q:samegap2, names_to = "y_name", values_to = "y_val") %>% 
+        distinct() %>% 
+        ggplot(aes(x_val, y_val, colour = y_name)) +
+        geom_point(alpha = .6) +
+        labs(x = "bias")
 }
 
 
-# get data ------
-set.seed(298374)
-the_data <- get_data()
+# get input parameters
+bounds <- db_table %>% 
+    summarise(max_gap1 = max(gap1),
+              min_gap1 = min(gap1),
+              max_gap2 = max(gap2),
+              min_gap2 = min(gap2),
+              max_std = max(stdpercent),
+              min_std = min(stdpercent),
+              max_t = max(T),
+              min_t = min(T)) %>% 
+    collect()
+
 
 
 
@@ -46,10 +55,26 @@ ui <- fluidPage(
     # Sidebar with input
     sidebarLayout(
         sidebarPanel(
-            selectInput("user_value",
-                        "Selected value",
-                        choices = c(1, 5, 10),
-                        selected = 1)
+            sliderInput("gap1_usr",
+                        "gap1",
+                        min = bounds$min_gap1,
+                        max = bounds$max_gap1,
+                        value = bounds$min_gap1),
+            sliderInput("gap2_usr",
+                        "gap2",
+                        min = bounds$min_gap2,
+                        max = bounds$max_gap2,
+                        value = bounds$min_gap2),
+            sliderInput("stdpercent_usr",
+                        "stdpercent",
+                        min = bounds$min_std,
+                        max = bounds$max_std,
+                        value = bounds$min_std),
+            sliderInput("T_usr",
+                        "T",
+                        min = bounds$min_t,
+                        max = bounds$max_t,
+                        value = bounds$min_t)
         ),
 
         # show plot
@@ -62,9 +87,12 @@ ui <- fluidPage(
 # define server -----
 server <- function(input, output) {
     output$plot <- renderPlot({
-        data_filtered <- filter_data(the_data, input$user_value)
-        
-        make_plot(data_filtered)
+        db_table %>% 
+            filter_data(gap1_usr = input$gap1_usr,
+                        gap2_usr = input$gap2_usr,
+                        stdpercent_usr = input$stdpercent_usr,
+                        T = input$T_usr) %>% 
+            make_plot()
     })
 }
 
