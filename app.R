@@ -18,7 +18,7 @@ filter_data <- function(df, gap1_usr = 0, gap2_usr = 0, stdpercent_usr = 0,
 }
 
 
-make_plot <- function(filtered_data) {
+make_plot <- function(filtered_data, x_lim) {
     filtered_data %>%
         collect() %>% 
         select(contains("bias"), q, samegap1, samegap2) %>%
@@ -27,7 +27,8 @@ make_plot <- function(filtered_data) {
         distinct() %>% 
         ggplot(aes(x_val, y_val, colour = y_name)) +
         geom_point(alpha = .6) +
-        labs(x = "bias")
+        labs(x = "bias") +
+        coord_cartesian(xlim = c(x_lim * -1, x_lim))
 }
 
 
@@ -48,10 +49,10 @@ bounds <- db_table %>%
 
 # Define UI for application ------
 ui <- fluidPage(
-
+    
     # Application title
     titlePanel("Display Simulation results"),
-
+    
     # Sidebar with input
     sidebarLayout(
         sidebarPanel(
@@ -76,10 +77,10 @@ ui <- fluidPage(
                         max = bounds$max_t,
                         value = bounds$min_t)
         ),
-
+        
         # show plot
         mainPanel(
-           plotOutput("plot")
+            plotOutput("plot")
         )
     )
 )
@@ -87,12 +88,15 @@ ui <- fluidPage(
 # define server -----
 server <- function(input, output) {
     output$plot <- renderPlot({
+        # set x_lim
+        x_lim <- max(input$gap1_usr, input$gap2_usr) * 3
+        
         db_table %>% 
             filter_data(gap1_usr = input$gap1_usr,
                         gap2_usr = input$gap2_usr,
                         stdpercent_usr = input$stdpercent_usr,
                         T = input$T_usr) %>% 
-            make_plot()
+            make_plot(x_lim)
     })
 }
 
