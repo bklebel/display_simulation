@@ -1,6 +1,7 @@
 library(shiny)
 library(tidyverse)
 library(DBI)
+library(scales)
 
 
 con <- dbConnect(RSQLite::SQLite(), dbname = "data.db")
@@ -18,17 +19,21 @@ filter_data <- function(df, gap1_usr = 0, gap2_usr = 0, stdpercent_usr = 0,
 }
 
 
-make_plot <- function(filtered_data, x_lim) {
+make_plot <- function(filtered_data, x_lim, gap1, gap2) {
     filtered_data %>%
         collect() %>% 
         select(contains("bias"), q, samegap1, samegap2) %>%
         pivot_longer(contains("bias"), names_to = "x_name", values_to = "x_val") %>% 
         pivot_longer(q:samegap2, names_to = "y_name", values_to = "y_val") %>% 
         distinct() %>% 
+        mutate(x_val = x_val / gap1) %>% 
         ggplot(aes(x_val, y_val, colour = y_name)) +
         geom_point(alpha = .6) +
         labs(x = "bias") +
-        coord_cartesian(xlim = c(x_lim * -1, x_lim))
+        coord_cartesian(xlim = c(x_lim * -1, x_lim), ylim = c(0, 10)) +
+        scale_x_continuous(breaks = breaks_width(1),
+                           sec.axis = sec_axis(trans = ~ . * gap1 / gap2, name = "gap2",
+                                               breaks = scales::breaks_width(1)))
 }
 
 
@@ -88,15 +93,17 @@ ui <- fluidPage(
 # define server -----
 server <- function(input, output) {
     output$plot <- renderPlot({
-        # set x_lim
-        x_lim <- max(input$gap1_usr, input$gap2_usr) * 3
+        
+        x_lim <- max(input$gap1_usr, input$gap2_usr) / input$gap1_usr * 3
+        
+        
         
         db_table %>% 
             filter_data(gap1_usr = input$gap1_usr,
                         gap2_usr = input$gap2_usr,
                         stdpercent_usr = input$stdpercent_usr,
                         T = input$T_usr) %>% 
-            make_plot(x_lim)
+            make_plot(x_lim, input$gap1_usr, input$gap2_usr)
     })
 }
 
