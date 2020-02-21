@@ -2,11 +2,14 @@ library(shiny)
 library(tidyverse)
 library(DBI)
 library(scales)
+library(pool)
 
 
-con <- dbConnect(RSQLite::SQLite(), dbname = "data.db")
-db_table <- tbl(con, "data")
-on.exit(dbDisconnect(con))
+pool <- dbPool(RSQLite::SQLite(), dbname = "data.db")
+db_table <- tbl(pool, "data")
+onStop(function() {
+    poolClose(pool)
+})
 
 # set up functions ------
 filter_data <- function(df, gap1_usr = 0, gap2_usr = 0, stdpercent_usr = 0,
@@ -98,7 +101,8 @@ server <- function(input, output) {
         
         
         
-        db_table %>% 
+        pool %>% 
+            tbl("data") %>% 
             filter_data(gap1_usr = input$gap1_usr,
                         gap2_usr = input$gap2_usr,
                         stdpercent_usr = input$stdpercent_usr,
